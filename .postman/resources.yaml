@@ -1,0 +1,175 @@
+# ChatterBox API Resources
+# Base URL: http://localhost:8081
+
+# ============================================================
+# AUTH  (/api/auth)
+# ============================================================
+endpoints:
+
+  - name: Register
+    method: POST
+    path: /api/auth/register
+    body: |
+      { "username": "alice", "password": "secret123" }
+    notes: Creates a new user account.
+
+  - name: Login
+    method: POST
+    path: /api/auth/login
+    body: |
+      { "username": "alice", "password": "secret123" }
+    notes: |
+      Authenticates the user and stores userId/username in the HTTP session.
+      Subsequent requests must carry the session cookie (JSESSIONID).
+
+  - name: Logout
+    method: POST
+    path: /api/auth/logout
+    notes: Invalidates the current session.
+
+  - name: Current User
+    method: GET
+    path: /api/auth/me
+    notes: Returns userId and username for the authenticated session.
+
+# ============================================================
+# ROOMS  (/api/rooms)
+# ============================================================
+
+  - name: List Rooms
+    method: GET
+    path: /api/rooms
+    notes: Returns all chat rooms.
+
+  - name: Create Room
+    method: POST
+    path: /api/rooms
+    auth: session required
+    body: |
+      { "roomName": "gaming", "description": "Talk about games" }
+
+  - name: Get Room Members
+    method: GET
+    path: /api/rooms/{roomId}/members
+    notes: Returns all members with their role and username.
+
+  - name: Room Message History
+    method: GET
+    path: /api/rooms/{roomId}/history?limit=50
+    notes: Returns the most recent messages (default 50, max 200).
+
+  - name: Older Room Messages
+    method: GET
+    path: /api/rooms/{roomId}/history/older?before={messageId}&limit=20
+    notes: Pagination — load messages older than a given message ID.
+
+# ============================================================
+# USERS  (/api/users)
+# ============================================================
+
+  - name: Search Users
+    method: GET
+    path: /api/users/search?q=ali
+    auth: session required
+    notes: Returns users whose username starts with the query (max 20).
+
+  - name: Online Users
+    method: GET
+    path: /api/users/online
+    notes: Returns the set of currently connected usernames.
+
+  - name: User Profile
+    method: GET
+    path: /api/users/{userId}
+    auth: session required
+    notes: Returns userId, username, lastSeen, and online status.
+
+# ============================================================
+# PRIVATE MESSAGES  (/api/pm)
+# ============================================================
+
+  - name: Start / Get Private Chat
+    method: POST
+    path: /api/pm/start
+    auth: session required
+    body: |
+      { "targetUsername": "bob" }
+    notes: Returns existing or newly created PrivateChatDto.
+
+  - name: List My Private Chats
+    method: GET
+    path: /api/pm/list
+    auth: session required
+
+  - name: PM Message History
+    method: GET
+    path: /api/pm/{privateChatId}/history?limit=50
+    auth: session required
+
+  - name: Older PM Messages
+    method: GET
+    path: /api/pm/{privateChatId}/history/older?before={messageId}&limit=20
+    auth: session required
+
+# ============================================================
+# MESSAGES  (/api/messages)
+# ============================================================
+
+  - name: Edit Message
+    method: PUT
+    path: /api/messages/{messageId}
+    auth: session required
+    body: |
+      { "content": "corrected text" }
+    notes: Only the original sender may edit. Returns updated MessageDto.
+
+  - name: Delete Message
+    method: DELETE
+    path: /api/messages/{messageId}
+    auth: session required
+    notes: Soft-deletes the message (sets deleted_at). Only sender may delete.
+
+# ============================================================
+# WEBSOCKET  (/ws/chat)
+# ============================================================
+
+websocket:
+  url: ws://localhost:8081/ws/chat
+  protocol: plain-text TCP relay
+  notes: |
+    Requires an authenticated HTTP session (log in via /api/auth/login first).
+    The session cookie must be sent with the WebSocket upgrade request.
+
+  commands_client_to_server:
+    - "/all <content>"                    # broadcast to General room
+    - "/msg <username> <content>"         # private message (saved to DB)
+    - "/room <roomName> <content>"        # send to a room
+    - "/join <roomName>"                  # join a room
+    - "/leave <roomName>"                 # leave a room
+    - "/list_rooms"                       # list all rooms
+    - "/create_room <name>"               # create a room
+    - "/kick <roomName> <username>"       # kick a member (OWNER/ADMIN only)
+    - "/typing_room <roomName>"           # typing indicator in room
+    - "/typing_pm <username>"             # typing indicator in PM
+    - "/edit <messageId> <newContent>"    # edit own message
+    - "/delete <messageId>"               # soft-delete own message
+    - "/online"                           # list online users
+    - "/history_room <roomName> <limit>"  # room message history
+    - "/history_pm <username> <limit>"    # PM message history
+    - "/read_room <roomName>"             # mark room as read
+    - "/read_pm <username>"               # mark PM as read
+    - "/quit"                             # disconnect
+
+  message_formats_server_to_client:
+    - "[ALL] username: content"
+    - "[ROOM:roomName] username: content"
+    - "[PRIVATE] fromUser: content"
+    - "[PRIVATE to username]: content"
+    - "[SYSTEM] text"
+    - "[HISTORY] ..."
+    - "[TYPING] username in roomName"
+    - "[TYPING_PM] username"
+    - "[ONLINE] user1,user2,..."
+    - "[EDIT] messageId:newContent"
+    - "[DELETE] messageId"
+    - "ERROR: description"
