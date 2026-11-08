@@ -1,0 +1,302 @@
+================================================================================
+                    CHATTERBOX: REAL-TIME CHAT APPLICATION
+                             PROJECT REPORT
+================================================================================
+
+--------------------------------------------------------------------------------
+a. PROBLEM STATEMENT
+--------------------------------------------------------------------------------
+In modern distributed and collaborative computing environments, communication 
+systems often encounter a severe architectural tension: traditional stateless 
+HTTP REST architectures are inefficient and high-latency for bidirectional, 
+instantaneous message dissemination, whereas purely low-level socket applications 
+lack structured data governance, access controls, session state management, and 
+persistent auditability.
+
+The objective of this project is to design, architect, and implement "Chatterbox"
+- a hybrid real-time chat platform that seamlessly bridges a low-overhead 
+multithreaded TCP socket server with an authenticated Spring Boot REST ecosystem 
+and an interactive modern web front-end. The platform must provide secure user 
+authentication, instant delivery across broadcast rooms and one-to-one direct 
+messaging, synchronized multi-client state management, persistent history with 
+pagination, presence tracking, and rich messaging features (typing indicators, 
+read receipts, and live message mutations).
+
+
+--------------------------------------------------------------------------------
+b. MOTIVATION FOR THE PROBLEM & SCOPE AND LIMITATIONS
+--------------------------------------------------------------------------------
+1. MOTIVATION:
+   - High Concurrency & Low Latency: Standard polling mechanisms (short/long polling)
+     waste bandwidth and overload server resources. A dedicated socket-based streaming
+     pipeline provides sub-millisecond event propagation.
+   - Dual Protocol Integration: Demonstrating how enterprise Java (Spring Boot) can
+     coexist harmoniously with raw network programming (Java ServerSocket, Worker 
+     Threads, synchronized memory models).
+   - Relational Persistence & State Consistency: Ensuring that fleeting memory events
+     are accurately written to disk (MySQL) via JDBC without blocking network I/O.
+   - Enterprise Security Practices: Storing passwords using cryptographic one-way salted 
+     hashing (BCrypt) and binding WebSocket connections to authenticated HTTP sessions.
+
+2. SCOPE:
+   - End-to-end user lifecycle management: Registration, session-based login, and logout.
+   - Public multi-user chat rooms (including default "General" room and custom user rooms).
+   - Private peer-to-peer messaging (direct chats) with dedicated history tracking.
+   - Live presence tracking (online/offline status and last seen timestamps).
+   - Bidirectional messaging lifecycle: Sent status, delivery status, and read ticks.
+   - Dynamic message mutation: Edit and soft-delete capabilities strictly scoped to 
+     the original sender.
+   - Room administrative governance: Ownership privileges, membership listings, and 
+     the ability to kick disruptive participants.
+
+3. LIMITATIONS:
+   - Single-node deployment: In-memory client maps are currently local to the JVM 
+     instance; horizontal scaling across multiple application nodes would require an 
+     external message broker (e.g., Redis Pub/Sub, RabbitMQ, or Apache Kafka).
+   - Media attachments: Current implementation is optimized for textual messages and 
+     Unicode emojis; binary payloads (file uploads, voice clips, images) are not 
+     handled in this MVP.
+   - End-to-End Encryption (E2EE): Messages are encrypted in transit via TLS/HTTPS/WSS, 
+     but stored in plaintext within the backend MySQL database.
+
+
+--------------------------------------------------------------------------------
+c. DESIGN OF THE SOLUTION
+--------------------------------------------------------------------------------
+Chatterbox adopts a 3-tier, hybrid asynchronous architecture combining an HTTP 
+REST interface with a WebSocket/TCP streaming backbone.
+
+1. High-Level Architectural Flow:
+   [Browser Client (JS)]
+       │
+       ├─ HTTP REST API (Port 8081) ───► Controllers ──► Services ──► JDBC Repositories ──► MySQL
+       │                                                                  ▲
+       └─ WebSocket (/ws/chat)                                            │
+               │                                                          │
+               ▼                                                          │
+       [HttpSessionHandshakeInterceptor]                                  │
+               │ (Transfers HTTP Session)                                 │
+               ▼                                                          │
+       [ChatWebSocketHandler]                                             │
+               │ (Bridging layer)                                         │
+               ▼                                                          │
+       [TCP ServerSocket (Port 9000)]                                     │
+               │                                                          │
+               ▼                                                          │
+       [ClientHandler (Worker Thread Pool)] ──────────────────────────────┘
+               │ (Routes live frames, saves to DB via JDBC)
+               ▼
+       [Concurrent Map of Connected Clients]
+
+2. Protocol Bridging Mechanism:
+   - The web client communicates with the backend over standard WebSocket (/ws/chat).
+   - During the WebSocket handshake, Spring's HttpSessionHandshakeInterceptor extracts
+     the authenticated "userId" and "username" session attributes.
+   - ChatWebSocketHandler opens a dedicated raw TCP socket to localhost:9000, 
+     registering the user as the initial line in the stream.
+   - A dedicated daemon thread reads incoming TCP lines and forwards them as text 
+     frames to the WebSocket connection, while incoming WebSocket frames are written 
+     directly to the TCP output stream.
+   - This architecture satisfies the requirement for raw TCP networking on port 9000 
+     while maintaining zero-friction compatibility with standard web browsers.
+
+
+--------------------------------------------------------------------------------
+d. MODULES SPLIT-UP
+--------------------------------------------------------------------------------
+The codebase is structured into clear, decoupled layers:
+
+1. Presentation & Controller Layer (`com.example.chatterbox.controller`):
+   - AuthController: Handles user registration, credential authentication, logout, 
+     and session verification (`/api/auth/*`).
+   - RoomController: Manages creation, listing, membership queries, and paginated 
+     history retrieval for chat rooms (`/api/rooms/*`).
+   - PrivateChatController: Manages conversation initiation, DM listings, and direct 
+     message history retrieval (`/api/pm/*`).
+   - UserController: Provides user search functionality, online status retrieval, 
+     and profile lookups (`/api/users/*`).
+   - MessageController: Exposes endpoints for sender-verified message editing and 
+     soft deletion (`/api/messages/*`).
+   - TestController: Health check probe endpoints (`/health`).
+
+2. Service Layer (`com.example.chatterbox.service`):
+   - AuthService: Validates credentials, executes BCrypt hashing, and handles session 
+     state creation.
+   - ChatService: Coordinates business rules for room creation, private conversations, 
+     pagination boundaries, and authorization checks for edits/deletions.
+   - UserService: Combines database user details with live runtime socket presence data.
+
+3. Network & Socket Layer (`com.example.chatterbox.network` & `.websocket`):
+   - ChatServer: TCP server bound to port 9000; orchestrates the ThreadPool, maintains 
+     the thread-safe client registry, broadcast routing, and live event dissemination.
+   - ClientHandler: Implements `Runnable`; processes custom command line protocols 
+     (`/all`, `/msg`, `/room`, `/join`, `/leave`, `/kick`, `/typing_room`, etc.).
+   - ChatWebSocketHandler: Bridges browser WebSockets with the backend TCP server socket.
+   - WebSocketConfig: Registers endpoints and session handshake interceptors.
+
+4. Data Access Layer (`com.example.chatterbox.repository` & `.model`):
+   - Domain Models: User, Message, ChatRoom, RoomMember, PrivateChat.
+   - Data Repositories: JdbcTemplate-backed repositories executing prepared SQL statements:
+     UserRepository, MessageRepository, ChatRoomRepository, RoomMemberRepository, 
+     PrivateChatRepository.
+
+5. Client-Side Web Application (`src/main/resources/static/`):
+   - HTML views: index.html (entry loader/router), login.html (auth), chat.html (main workspace).
+   - Stylesheet: style.css (neutral dark aesthetic, responsive, component-oriented).
+   - JavaScript modules: api.js (REST client), websocket.js (robust WS client with 
+     exponential backoff reconnection), login.js (auth forms), chat.js (core UI state engine).
+
+
+--------------------------------------------------------------------------------
+e. IMPLEMENTATION SPECIFICS
+--------------------------------------------------------------------------------
+1. Security & Authentication:
+   - Spring Security configured in SecurityConfig with CSRF disabled for REST and 
+     custom session management.
+   - Passwords cryptographically hashed using BCryptPasswordEncoder (strength 10).
+   - `request.changeSessionId()` invoked upon login to mitigate session fixation attacks.
+   - WebSocket connections enforce authentication checks; unauthenticated connection 
+     attempts are terminated immediately with CloseStatus.POLICY_VIOLATION (code 1008).
+
+2. Network Concurrency & Thread Safety:
+   - Fixed thread pool of 100 worker threads (`Executors.newFixedThreadPool(100)`).
+   - Synchronized shared client registry (`Collections.synchronizedMap(new HashMap<>())`) 
+     supplemented by explicit synchronized blocks to ensure atomic compound operations 
+     (e.g., registration check-then-act, iteration during broadcast).
+   - Per-socket synchronized writer locks to prevent message interleaving across concurrent threads.
+
+3. Database Access & Query Optimization:
+   - Spring JdbcTemplate with parameterized queries to eliminate SQL injection vulnerabilities.
+   - Auto-generated key capture using `GeneratedKeyHolder` and `RETURN_GENERATED_KEYS`.
+   - Message pagination executed via nested subqueries (`SELECT * FROM (SELECT ... ORDER BY message_id DESC LIMIT ?) ORDER BY message_id ASC`) 
+     to ensure chronological rendering on client clients while reading the latest items.
+   - Soft-delete pattern preserving audit trail (`deleted_at` timestamp).
+
+4. Front-End Resiliency & Performance:
+   - Debounced user search (250ms delay) to prevent unnecessary query load on the database.
+   - Custom exponential backoff auto-reconnect strategy (reconnect attempts capped at 10, 
+     delay bounded between 1s and 3s).
+   - Clean DOM recycling and selective element updates for typing indicators and message status ticks.
+
+
+--------------------------------------------------------------------------------
+f. VALIDATION TEST CASES
+--------------------------------------------------------------------------------
+A comprehensive suite of automated integration and smoke tests verified both 
+the HTTP REST services and WebSocket/TCP real-time pipelines:
+
+Test Case 1: User Registration Validation
+- Input: Valid username (`tester_a`), password (`pass123`).
+- Expected: HTTP 201 Created with JSON containing userId and username.
+- Status: PASSED.
+
+Test Case 2: Duplicate Registration Guard
+- Input: Attempt to register identical username (`tester_a`).
+- Expected: HTTP 409 Conflict.
+- Status: PASSED.
+
+Test Case 3: Invalid Username Constraints
+- Input: Invalid username with spaces or special characters (`a b`).
+- Expected: HTTP 400 Bad Request (strictly enforces 3-20 characters: [A-Za-z0-9_]).
+- Status: PASSED.
+
+Test Case 4: Authentication & Password Verification
+- Input: Valid username with incorrect password.
+- Expected: HTTP 401 Unauthorized; correct credentials yield HTTP 200 with session cookie.
+- Status: PASSED.
+
+Test Case 5: Session-Protected WebSocket Handshake
+- Input: WebSocket connection without an active HTTP session cookie.
+- Expected: Immediate connection rejection with WebSocket close code 1008.
+- Status: PASSED.
+
+Test Case 6: Live Broadcast Routing
+- Input: Client A sends `/all hello general`.
+- Expected: Client B receives live formatted frame `[ALL:<id>] ClientA: hello general`;
+  message successfully written to MySQL and retrievable via REST `/api/rooms/1/history`.
+- Status: PASSED.
+
+Test Case 7: Direct Messaging Isolation
+- Input: Client A sends `/msg ClientB private test`.
+- Expected: Client B receives `[PRIVATE:<id>] ClientA: private test`; Client A receives 
+  `[PRIVATE_SENT:<id>:ClientB]: private test`; third-party clients receive nothing.
+- Status: PASSED.
+
+Test Case 8: Message Mutation Authorization
+- Input: Client B attempts to edit/delete Client A's message ID via REST.
+- Expected: HTTP 403 Forbidden; sender editing own message returns HTTP 200 with updated content.
+- Status: PASSED.
+
+Test Case 9: Room Governance & Role Enforcement
+- Input: Room creator issues `/kick <room> <user>`.
+- Expected: Target user receives kick notification, is removed from room_members, and 
+  can no longer post to the room.
+- Status: PASSED.
+
+Test Case 10: Graceful Disconnect & Presence Cleanup
+- Input: Client B closes socket connection.
+- Expected: Server triggers `cleanup()`, removes client from internal registry, 
+  broadcasts disconnection notification to remaining peers, updates `last_seen` timestamp.
+- Status: PASSED.
+
+
+--------------------------------------------------------------------------------
+h. OBJECT ORIENTED FEATURES USED
+--------------------------------------------------------------------------------
+The application demonstrates core Object-Oriented Programming (OOP) principles:
+
+1. Encapsulation:
+   - Domain models (User, Message, ChatRoom, RoomMember, PrivateChat) protect their internal 
+     state through private attributes exposed solely via getters and setters.
+   - Services and Controllers encapsulate domain business rules and prevent leakage of 
+     raw persistence logic into network endpoints.
+
+2. Abstraction:
+   - Data Access Abstraction: Controllers depend on Service abstractions, which in turn 
+     depend on Repository interfaces and data mappers (`RowMapper<T>`), decoupling SQL dialect 
+     nuances from application business logic.
+   - Network Handlers: `ChatWebSocketHandler` abstracts TCP network communications into 
+     standard WebSocket messages for web consumers.
+
+3. Inheritance & Polymorphism:
+   - `ClientHandler` implements Java's standard `Runnable` interface, allowing thread pool 
+     executors to polymorphically manage client worker tasks.
+   - `ChatWebSocketHandler` extends Spring's `TextWebSocketHandler`, overriding lifecycle 
+     hooks (`afterConnectionEstablished`, `handleTextMessage`, `afterConnectionClosed`, 
+     `handleTransportError`).
+   - `WebSocketConfig` implements `WebSocketConfigurer` to inject custom connection pipelines.
+
+4. Separation of Concerns & Dependency Injection:
+   - Inversion of Control (IoC) via constructor-based dependency injection throughout 
+     all Controllers, Services, Repositories, and Configuration beans, enabling high 
+     testability and modular replacement.
+
+
+--------------------------------------------------------------------------------
+i. INFERENCE AND FUTURE EXTENSION
+--------------------------------------------------------------------------------
+1. INFERENCE:
+   - The hybrid architecture successfully combines the stateless scalability of Spring Boot 
+     REST with the ultra-low latency of a multi-threaded TCP/WebSocket message bus.
+   - Offloading persistent storage to relational JDBC queries while maintaining active client 
+     references in synchronized memory structures guarantees sub-second responsiveness without 
+     sacrificing data integrity or transaction compliance.
+   - Strong typing, modular package separation, and adherence to clean OOP patterns made it 
+     straightforward to identify, isolate, and remediate boundary issues (such as session 
+     re-use, message ID tracking, and date divider deduplication).
+
+2. FUTURE EXTENSIONS:
+   - Distributed Clustering (Redis Pub/Sub): Replace the single-node in-memory client map 
+     with a Redis Pub/Sub adapter to allow horizontal scaling across multiple servers/containers.
+   - Multimedia and File Sharing: Integrate Amazon S3 or Google Cloud Storage with presigned 
+     upload URLs to support sharing images, audio recordings, and documents.
+   - Push Notifications: Integrate Web Push API and Firebase Cloud Messaging (FCM) to deliver 
+     notifications to mobile and inactive web browsers when direct messages arrive.
+   - Voice and Video Calling (WebRTC): Utilize the existing WebSocket signaling infrastructure 
+     to negotiate WebRTC peer-to-peer audio/video streaming sessions.
+   - Granular Read Receipts: Track per-message, per-user delivery and read acknowledgments 
+     in a dedicated database junction table.
+
+================================================================================
+                               END OF REPORT
+================================================================================
