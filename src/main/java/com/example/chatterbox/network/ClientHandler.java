@@ -222,7 +222,9 @@ public class ClientHandler implements Runnable {
             }
 
             String result = server.joinRoom(username, roomName);
-            sendMessage(result);
+            if (result != null && !result.isEmpty()) {
+                sendMessage(result);
+            }
 
         // ---- Leave room (/leave <roomName>) ------------------------
         } else if (message.startsWith("/leave ")) {

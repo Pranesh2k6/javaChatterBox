@@ -1134,6 +1134,7 @@
       }
 
       case 'SYSTEM': {
+        if (msg.content && msg.content.startsWith('You are already a member of')) break;
         if (state.currentChat) appendSystemMessage(msg.content);
         break;
       }

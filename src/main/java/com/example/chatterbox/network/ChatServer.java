@@ -416,7 +416,7 @@ public class ChatServer {
         if (roomMemberRepository.exists(
                 room.getRoomId(), user.getUserId())) {
 
-            return "[SYSTEM] You are already a member of " + roomName;
+            return null;
         }
 
         RoomMember member = new RoomMember();
