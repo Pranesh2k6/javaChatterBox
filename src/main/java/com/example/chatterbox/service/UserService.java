@@ -31,13 +31,35 @@ public class UserService {
     }
 
     /**
+     * Return all active users with live online status.
+     */
+    public List<UserProfileDto> getAllUsers() {
+
+        List<User> users = userRepository.findAll();
+        List<UserProfileDto> results = new ArrayList<>();
+
+        for (User user : users) {
+            if (!user.isActive()) continue;
+            boolean online = chatServer.isOnline(user.getUsername());
+            results.add(new UserProfileDto(
+                    user.getUserId(),
+                    user.getUsername(),
+                    user.getLastSeen(),
+                    online
+            ));
+        }
+
+        return results;
+    }
+
+    /**
      * Search for users whose username starts with the given prefix.
      * Returns up to 20 matches with live online status.
      */
     public List<UserProfileDto> searchByUsername(String query) {
 
         if (query == null || query.isBlank()) {
-            return List.of();
+            return getAllUsers();
         }
 
         List<User> users =

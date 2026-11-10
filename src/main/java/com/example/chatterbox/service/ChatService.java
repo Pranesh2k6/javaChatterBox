@@ -21,8 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Business logic for the REST API layer.
@@ -95,12 +97,52 @@ public class ChatService {
         }
 
         /**
+         * Return only the rooms that the user is a member of (plus the default General room).
+         * If the user leaves a room, it will no longer appear in their room list.
+         */
+        public List<RoomDto> getUserRooms(Long sessionUserId) {
+
+                requireAuthenticatedUser(sessionUserId);
+
+                List<ChatRoom> allRooms = chatRoomRepository.findAll();
+                List<RoomMember> memberships = roomMemberRepository.findByUserId(sessionUserId);
+
+                Set<Long> memberRoomIds = new HashSet<>();
+                for (RoomMember m : memberships) {
+                        memberRoomIds.add(m.getRoomId());
+                }
+
+                List<RoomDto> dtos = new ArrayList<>();
+                for (ChatRoom room : allRooms) {
+                        boolean isGeneral = (room.getRoomId() != null && room.getRoomId() == 1L)
+                                        || "General".equalsIgnoreCase(room.getRoomName());
+                        if (isGeneral || memberRoomIds.contains(room.getRoomId())) {
+                                dtos.add(toRoomDto(room));
+                        }
+                }
+
+                return dtos;
+        }
+
+        /**
          * Create a new room via REST API.
          * The calling user becomes the OWNER member automatically.
          */
         public RoomDto createRoom(Long sessionUserId,
                         String roomName,
                         String description) {
+                return createRoom(sessionUserId, roomName, description, null);
+        }
+
+        /**
+         * Create a new room via REST API with an optional list of initial member usernames.
+         * The calling user becomes the OWNER member automatically, and selected users
+         * are added as MEMBERs and notified in real time if online.
+         */
+        public RoomDto createRoom(Long sessionUserId,
+                        String roomName,
+                        String description,
+                        List<String> memberUsernames) {
 
                 User creator = requireAuthenticatedUser(sessionUserId);
 
@@ -133,10 +175,59 @@ public class ChatService {
 
                 roomMemberRepository.save(ownerMember);
 
+                // Add selected users as MEMBERs
+                if (memberUsernames != null) {
+                        for (String rawUsername : memberUsernames) {
+                                if (rawUsername == null || rawUsername.isBlank()) {
+                                        continue;
+                                }
+                                String uname = rawUsername.trim();
+                                Optional<User> targetOpt = userRepository.findByUsername(uname);
+                                if (targetOpt.isPresent()) {
+                                        User target = targetOpt.get();
+                                        if (!target.getUserId().equals(creator.getUserId())
+                                                        && !roomMemberRepository.exists(roomId, target.getUserId())) {
+                                                RoomMember member = new RoomMember();
+                                                member.setRoomId(roomId);
+                                                member.setUserId(target.getUserId());
+                                                member.setRole("MEMBER");
+                                                roomMemberRepository.save(member);
+
+                                                // Notify online user so the room appears in their sidebar immediately
+                                                chatServer.sendPrivateMessage(
+                                                                target.getUsername(),
+                                                                "[ROOM_ADDED] " + trimmedName);
+                                        }
+                                }
+                        }
+                }
+
                 return chatRoomRepository.findById(roomId)
                                 .map(this::toRoomDto)
                                 .orElseThrow(() -> new IllegalStateException(
                                                 "Room could not be retrieved after creation"));
+        }
+
+        /**
+         * Leave a room via REST API.
+         */
+        public void leaveRoom(Long sessionUserId, Long roomId) {
+
+                User user = requireAuthenticatedUser(sessionUserId);
+
+                ChatRoom room = chatRoomRepository.findById(roomId)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Room not found"));
+
+                if ((room.getRoomId() != null && room.getRoomId() == 1L)
+                                || "General".equalsIgnoreCase(room.getRoomName())) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.BAD_REQUEST,
+                                        "You cannot leave the General room");
+                }
+
+                chatServer.leaveRoom(user.getUsername(), room.getRoomName());
         }
 
         /**

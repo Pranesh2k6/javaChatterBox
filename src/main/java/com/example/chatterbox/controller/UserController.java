@@ -33,6 +33,19 @@ public class UserController {
     }
 
     // ----------------------------------------------------------------
+    // GET /api/users — list all active users
+    // ----------------------------------------------------------------
+
+    @GetMapping
+    public ResponseEntity<List<UserProfileDto>> listAllUsers(
+            HttpServletRequest request) {
+
+        requireAuthentication(request);
+
+        return ResponseEntity.ok(userService.getAllUsers());
+    }
+
+    // ----------------------------------------------------------------
     // GET /api/users/search?q=<prefix> — search by username prefix
     // ----------------------------------------------------------------
 

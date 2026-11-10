@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chatterbox</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=5" />
 </head>
 <body class="chat-page">
 
@@ -221,6 +221,16 @@
             <input class="field-input" type="text" id="new-room-desc" placeholder="Topic or purpose of this room" maxlength="200" />
           </div>
         </div>
+        <div class="field-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="field-label" for="new-room-user-search" style="margin-bottom:0;">Add Members <span style="color:var(--text-muted); text-transform:none;">(optional)</span></label>
+            <span id="new-room-selected-count" style="font-size:12px; color:var(--accent-primary); font-weight:500;">0 selected</span>
+          </div>
+          <div class="field-wrap" style="margin-bottom:8px;">
+            <input class="field-input" type="text" id="new-room-user-search" placeholder="Filter users..." autocomplete="off" />
+          </div>
+          <div class="user-select-list" id="new-room-users-list"></div>
+        </div>
         <div class="auth-error hidden" id="new-room-error"></div>
       </div>
       <div class="modal-footer">
@@ -260,8 +270,8 @@
     </div>
   </div>
 
-  <script src="/js/api.js?v=4"></script>
-  <script src="/js/websocket.js?v=4"></script>
-  <script src="/js/chat.js?v=4"></script>
+  <script src="/js/api.js?v=5"></script>
+  <script src="/js/websocket.js?v=5"></script>
+  <script src="/js/chat.js?v=5"></script>
 </body>
 </html>

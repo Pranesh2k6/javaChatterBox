@@ -45,11 +45,12 @@ const API = {
 
   /** Room endpoints */
   rooms: {
-    list()                              { return API.get('/api/rooms'); },
-    create(roomName, description)       { return API.post('/api/rooms', { roomName, description }); },
-    members(roomId)                     { return API.get(`/api/rooms/${roomId}/members`); },
-    history(roomId, limit = 50)         { return API.get(`/api/rooms/${roomId}/history?limit=${limit}`); },
-    older(roomId, before, limit = 20)   { return API.get(`/api/rooms/${roomId}/history/older?before=${before}&limit=${limit}`); },
+    list()                                          { return API.get('/api/rooms'); },
+    create(roomName, description, members = [])     { return API.post('/api/rooms', { roomName, description, members }); },
+    leave(roomId)                                   { return API.post(`/api/rooms/${roomId}/leave`, {}); },
+    members(roomId)                                 { return API.get(`/api/rooms/${roomId}/members`); },
+    history(roomId, limit = 50)                     { return API.get(`/api/rooms/${roomId}/history?limit=${limit}`); },
+    older(roomId, before, limit = 20)               { return API.get(`/api/rooms/${roomId}/history/older?before=${before}&limit=${limit}`); },
   },
 
   /** Private message endpoints */
@@ -62,6 +63,7 @@ const API = {
 
   /** User endpoints */
   users: {
+    list()         { return API.get('/api/users'); },
     search(q)      { return API.get(`/api/users/search?q=${encodeURIComponent(q)}`); },
     online()       { return API.get('/api/users/online'); },
     profile(id)    { return API.get(`/api/users/${id}`); },

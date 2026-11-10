@@ -190,6 +190,10 @@ class ChatWebSocket {
     m = raw.match(/^\[LEFT_ROOM\] ([^:]+):(.+)$/);
     if (m) return { type: 'LEFT_ROOM', roomName: m[1].trim(), username: m[2].trim(), raw };
 
+    // ── ROOM_ADDED (added to a newly created room) ─────
+    m = raw.match(/^\[ROOM_ADDED\] (.+)$/);
+    if (m) return { type: 'ROOM_ADDED', roomName: m[1].trim(), raw };
+
     // ── Fallback ───────────────────────────────────────
     return { type: 'UNKNOWN', raw };
   }

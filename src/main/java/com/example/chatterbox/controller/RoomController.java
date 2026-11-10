@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -33,11 +34,17 @@ public class RoomController {
     }
 
     // ----------------------------------------------------------------
-    // GET /api/rooms — list all rooms
+    // GET /api/rooms — list rooms the user belongs to (or all if unauthenticated)
     // ----------------------------------------------------------------
 
     @GetMapping
-    public ResponseEntity<List<RoomDto>> listRooms() {
+    public ResponseEntity<List<RoomDto>> listRooms(HttpServletRequest request) {
+
+        HttpSession session = request.getSession(false);
+        if (session != null && session.getAttribute("userId") != null) {
+            Long userId = (Long) session.getAttribute("userId");
+            return ResponseEntity.ok(chatService.getUserRooms(userId));
+        }
 
         return ResponseEntity.ok(chatService.getAllRooms());
     }
@@ -48,18 +55,46 @@ public class RoomController {
 
     @PostMapping
     public ResponseEntity<RoomDto> createRoom(
-            @RequestBody Map<String, String> body,
+            @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
 
         Long userId = getSessionUserId(request);
 
-        String roomName = body.get("roomName");
-        String description = body.getOrDefault("description", "");
+        String roomName = body.get("roomName") != null
+                ? String.valueOf(body.get("roomName"))
+                : null;
+        String description = body.get("description") != null
+                ? String.valueOf(body.get("description"))
+                : "";
+
+        List<String> members = new ArrayList<>();
+        Object rawMembers = body.get("members");
+        if (rawMembers instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null) {
+                    members.add(String.valueOf(item));
+                }
+            }
+        }
 
         RoomDto created =
-                chatService.createRoom(userId, roomName, description);
+                chatService.createRoom(userId, roomName, description, members);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    // ----------------------------------------------------------------
+    // POST /api/rooms/{roomId}/leave — leave a room (authenticated)
+    // ----------------------------------------------------------------
+
+    @PostMapping("/{roomId}/leave")
+    public ResponseEntity<Void> leaveRoom(
+            @PathVariable Long roomId,
+            HttpServletRequest request) {
+
+        Long userId = getSessionUserId(request);
+        chatService.leaveRoom(userId, roomId);
+        return ResponseEntity.noContent().build();
     }
 
     // ----------------------------------------------------------------

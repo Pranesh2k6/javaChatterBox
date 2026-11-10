@@ -463,7 +463,11 @@ public class ChatServer {
                 );
 
         if (memberOpt.isEmpty()) {
-            return "ERROR: You are not a member of " + roomName;
+            sendPrivateMessage(
+                    username,
+                    "[LEFT_ROOM] " + roomName + ":" + username
+            );
+            return "";
         }
 
         boolean wasOwner = "OWNER".equalsIgnoreCase(memberOpt.get().getRole())

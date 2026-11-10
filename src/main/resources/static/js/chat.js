@@ -85,13 +85,16 @@
     reconnectBanner:  $('reconnect-banner'),
     reconnectText:    $('reconnect-text'),
     // Modals
-    newRoomOverlay:   $('new-room-overlay'),
-    newRoomName:      $('new-room-name'),
-    newRoomDesc:      $('new-room-desc'),
-    newRoomError:     $('new-room-error'),
-    closeRoomModal:   $('close-room-modal'),
-    cancelRoomModal:  $('cancel-room-modal'),
-    createRoomBtn:    $('create-room-btn'),
+    newRoomOverlay:       $('new-room-overlay'),
+    newRoomName:          $('new-room-name'),
+    newRoomDesc:          $('new-room-desc'),
+    newRoomUserSearch:    $('new-room-user-search'),
+    newRoomSelectedCount: $('new-room-selected-count'),
+    newRoomUsersList:     $('new-room-users-list'),
+    newRoomError:         $('new-room-error'),
+    closeRoomModal:       $('close-room-modal'),
+    cancelRoomModal:      $('cancel-room-modal'),
+    createRoomBtn:        $('create-room-btn'),
     kickOverlay:      $('kick-overlay'),
     kickUsername:     $('kick-username'),
     kickError:        $('kick-error'),
@@ -1186,8 +1189,11 @@
         if (msg.username === currentUser.username) {
           showToast(`You were kicked from #${msg.roomName}`, 'error');
           els.membersPanel.classList.add('hidden');
+          state.rooms = state.rooms.filter(r => r.roomName.toLowerCase() !== msg.roomName.toLowerCase());
+          renderRooms();
+          loadRooms();
           if (state.currentChat && state.currentChat.type === 'room' &&
-              state.currentChat.name === msg.roomName) {
+              state.currentChat.name.toLowerCase() === msg.roomName.toLowerCase()) {
             const generalRoom = state.rooms.find(r => r.roomName.toLowerCase() === 'general' || r.roomId === 1);
             if (generalRoom) openRoom(generalRoom);
           }
@@ -1204,15 +1210,22 @@
 
       case 'LEFT_ROOM': {
         if (msg.username === currentUser.username) {
-          showToast(`You left #${msg.roomName}`, 'info');
           els.membersPanel.classList.add('hidden');
+          state.rooms = state.rooms.filter(r => r.roomName.toLowerCase() !== msg.roomName.toLowerCase());
+          renderRooms();
           loadRooms();
           if (state.currentChat && state.currentChat.type === 'room' &&
-              state.currentChat.name === msg.roomName) {
+              state.currentChat.name.toLowerCase() === msg.roomName.toLowerCase()) {
             const generalRoom = state.rooms.find(r => r.roomName.toLowerCase() === 'general' || r.roomId === 1);
             if (generalRoom) openRoom(generalRoom);
           }
         }
+        break;
+      }
+
+      case 'ROOM_ADDED': {
+        loadRooms();
+        showToast(`You were added to #${msg.roomName}`, 'info');
         break;
       }
 
@@ -1333,12 +1346,87 @@
   }
 
   /* Create Room Modal */
-  els.newRoomBtn.addEventListener('click', () => {
+  const selectedNewRoomUsers = new Set();
+  let allSelectableUsers = [];
+
+  function updateSelectedUsersCount() {
+    if (els.newRoomSelectedCount) {
+      els.newRoomSelectedCount.textContent = `${selectedNewRoomUsers.size} selected`;
+    }
+  }
+
+  function renderSelectableUsers(filterQuery = '') {
+    if (!els.newRoomUsersList) return;
+    els.newRoomUsersList.innerHTML = '';
+    const q = filterQuery.trim().toLowerCase();
+    const filtered = allSelectableUsers.filter(u =>
+      u.username !== currentUser.username &&
+      (!q || u.username.toLowerCase().includes(q))
+    );
+
+    if (filtered.length === 0) {
+      const empty = el('div', 'user-select-empty', {
+        textContent: q ? 'No matching users found' : 'No other users available'
+      });
+      els.newRoomUsersList.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(u => {
+      const isSelected = selectedNewRoomUsers.has(u.username);
+      const item = el('div', `user-select-item${isSelected ? ' selected' : ''}`);
+
+      const check = el('span', 'user-select-check', { textContent: '✓' });
+      const isOnline = u.online || state.online.has(u.username);
+      const dot = el('span', `online-dot ${isOnline ? 'online' : 'offline'}`);
+      const name = el('span', 'user-select-name', { textContent: u.username });
+
+      item.appendChild(check);
+      item.appendChild(dot);
+      item.appendChild(name);
+
+      item.addEventListener('click', () => {
+        if (selectedNewRoomUsers.has(u.username)) {
+          selectedNewRoomUsers.delete(u.username);
+          item.classList.remove('selected');
+        } else {
+          selectedNewRoomUsers.add(u.username);
+          item.classList.add('selected');
+        }
+        updateSelectedUsersCount();
+      });
+
+      els.newRoomUsersList.appendChild(item);
+    });
+  }
+
+  if (els.newRoomUserSearch) {
+    els.newRoomUserSearch.addEventListener('input', (e) => {
+      renderSelectableUsers(e.target.value);
+    });
+  }
+
+  els.newRoomBtn.addEventListener('click', async () => {
     els.newRoomOverlay.classList.remove('hidden');
     els.newRoomName.value = '';
     els.newRoomDesc.value = '';
+    if (els.newRoomUserSearch) els.newRoomUserSearch.value = '';
+    selectedNewRoomUsers.clear();
+    updateSelectedUsersCount();
     els.newRoomError.classList.add('hidden');
     els.newRoomName.focus();
+
+    if (els.newRoomUsersList) {
+      els.newRoomUsersList.innerHTML = '<div class="user-select-empty">Loading users...</div>';
+    }
+    try {
+      const users = await API.users.list();
+      allSelectableUsers = Array.isArray(users) ? users : [];
+      renderSelectableUsers(els.newRoomUserSearch ? els.newRoomUserSearch.value : '');
+    } catch {
+      allSelectableUsers = [];
+      renderSelectableUsers('');
+    }
   });
 
   function closeNewRoomModal() {
@@ -1363,8 +1451,11 @@
     els.createRoomBtn.querySelector('.btn-spinner').classList.remove('hidden');
 
     try {
-      const room = await API.rooms.create(name, desc);
-      state.rooms.push(room);
+      const members = Array.from(selectedNewRoomUsers);
+      const room = await API.rooms.create(name, desc, members);
+      if (!state.rooms.some(r => r.roomId === room.roomId)) {
+        state.rooms.push(room);
+      }
       renderRooms();
       closeNewRoomModal();
       openRoom(room);
@@ -1404,16 +1495,33 @@
   els.cancelKickModal.addEventListener('click', closeKickModal);
   els.kickOverlay.addEventListener('click', (e) => { if (e.target === els.kickOverlay) closeKickModal(); });
 
-  function leaveCurrentRoom() {
+  async function leaveCurrentRoom() {
     if (!state.currentChat || state.currentChat.type !== 'room') return;
     if (state.currentChat.id === 1 || state.currentChat.name.toLowerCase() === 'general') {
       showToast('You cannot leave the #General room.', 'error');
       return;
     }
+    const leavingRoomId = state.currentChat.id;
+    const leavingRoomName = state.currentChat.name;
+
     els.roomActionsMenu.classList.add('hidden');
-    if (ws) {
-      ws.send(`/leave ${state.currentChat.name}`);
+    els.membersPanel.classList.add('hidden');
+
+    // Immediately remove from sidebar & switch to General
+    state.rooms = state.rooms.filter(r => r.roomId !== leavingRoomId && r.roomName.toLowerCase() !== leavingRoomName.toLowerCase());
+    renderRooms();
+    const generalRoom = state.rooms.find(r => r.roomName.toLowerCase() === 'general' || r.roomId === 1);
+    if (generalRoom) {
+      openRoom(generalRoom);
     }
+
+    try {
+      await API.rooms.leave(leavingRoomId);
+    } catch {
+      if (ws) ws.send(`/leave ${leavingRoomName}`);
+    }
+    showToast(`You left #${leavingRoomName}`, 'info');
+    loadRooms();
   }
 
   if (els.leaveMenuItem) {
