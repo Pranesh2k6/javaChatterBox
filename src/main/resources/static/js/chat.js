@@ -67,9 +67,11 @@
     roomActionsWrap:  $('room-actions-wrap'),
     roomActionsBtn:   $('room-actions-btn'),
     roomActionsMenu:  $('room-actions-menu'),
+    addMembersMenuItem:$('add-members-menu-item'),
     kickMenuItem:     $('kick-menu-item'),
     leaveMenuItem:    $('leave-menu-item'),
     membersFooter:    $('members-footer'),
+    addMembersPanelBtn:$('add-members-panel-btn'),
     leaveRoomPanelBtn:$('leave-room-panel-btn'),
     messagesWrap:     $('messages-wrap'),
     messagesArea:     $('messages-area'),
@@ -95,6 +97,15 @@
     closeRoomModal:       $('close-room-modal'),
     cancelRoomModal:      $('cancel-room-modal'),
     createRoomBtn:        $('create-room-btn'),
+    addMembersOverlay:       $('add-members-overlay'),
+    addMembersTitle:         $('add-members-title'),
+    addMembersUserSearch:    $('add-members-user-search'),
+    addMembersSelectedCount: $('add-members-selected-count'),
+    addMembersUsersList:     $('add-members-users-list'),
+    addMembersError:         $('add-members-error'),
+    closeAddMembersModal:    $('close-add-members-modal'),
+    cancelAddMembersModal:   $('cancel-add-members-modal'),
+    confirmAddMembersBtn:    $('confirm-add-members-btn'),
     kickOverlay:      $('kick-overlay'),
     kickUsername:     $('kick-username'),
     kickError:        $('kick-error'),
@@ -333,9 +344,11 @@
     let isOwner = Number(room.ownerId) === Number(currentUser.userId);
     state.isCurrentRoomAdmin = isOwner;
 
+    if (els.addMembersMenuItem) els.addMembersMenuItem.style.display = (isOwner && !isGeneral) ? '' : 'none';
+    if (els.addMembersPanelBtn) els.addMembersPanelBtn.style.display = (isOwner && !isGeneral) ? '' : 'none';
     els.kickMenuItem.style.display = isOwner ? '' : 'none';
     if (els.leaveMenuItem) els.leaveMenuItem.style.display = isGeneral ? 'none' : '';
-    if (els.membersFooter) els.membersFooter.style.display = isGeneral ? 'none' : '';
+    if (els.membersFooter) els.membersFooter.style.display = isGeneral ? 'none' : 'flex';
     els.roomActionsWrap.style.display = (!isGeneral || isOwner) ? '' : 'none';
     els.membersBtn.style.display = '';
 
@@ -356,6 +369,8 @@
         if (myMembership && (myMembership.role === 'OWNER' || myMembership.role === 'ADMIN')) {
           isOwner = true;
           state.isCurrentRoomAdmin = true;
+          if (els.addMembersMenuItem && !isGeneral) els.addMembersMenuItem.style.display = '';
+          if (els.addMembersPanelBtn && !isGeneral) els.addMembersPanelBtn.style.display = '';
           els.kickMenuItem.style.display = '';
           els.roomActionsWrap.style.display = '';
         }
@@ -1312,6 +1327,14 @@
         (roomObj && Number(roomObj.ownerId) === Number(currentUser.userId)) ||
         (myMembership && (myMembership.role === 'OWNER' || myMembership.role === 'ADMIN'));
 
+      const isGeneral = roomId === 1 || (roomObj && roomObj.roomName.toLowerCase() === 'general');
+      if (els.addMembersPanelBtn) {
+        els.addMembersPanelBtn.style.display = (canKick && !isGeneral) ? '' : 'none';
+      }
+      if (els.addMembersMenuItem) {
+        els.addMembersMenuItem.style.display = (canKick && !isGeneral) ? '' : 'none';
+      }
+
       members.forEach(m => {
         const li = el('li', 'member-item');
         const avatar = el('div', 'item-avatar', { textContent: initials(m.username) });
@@ -1469,6 +1492,160 @@
       els.createRoomBtn.querySelector('.btn-spinner').classList.add('hidden');
     }
   });
+
+  /* Add Members to Existing Room Modal */
+  const selectedAddRoomUsers = new Set();
+  let addRoomCandidates = [];
+
+  function updateAddMembersCount() {
+    if (els.addMembersSelectedCount) {
+      els.addMembersSelectedCount.textContent = `${selectedAddRoomUsers.size} selected`;
+    }
+  }
+
+  function renderAddMembersCandidates(filterQuery = '') {
+    if (!els.addMembersUsersList) return;
+    els.addMembersUsersList.innerHTML = '';
+    const q = filterQuery.trim().toLowerCase();
+    const filtered = addRoomCandidates.filter(u =>
+      !q || u.username.toLowerCase().includes(q)
+    );
+
+    if (filtered.length === 0) {
+      const empty = el('div', 'user-select-empty', {
+        textContent: q ? 'No matching users found' : 'All users are already in this room'
+      });
+      els.addMembersUsersList.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(u => {
+      const isSelected = selectedAddRoomUsers.has(u.username);
+      const item = el('div', `user-select-item${isSelected ? ' selected' : ''}`);
+
+      const check = el('span', 'user-select-check', { textContent: '✓' });
+      const isOnline = u.online || state.online.has(u.username);
+      const dot = el('span', `online-dot ${isOnline ? 'online' : 'offline'}`);
+      const name = el('span', 'user-select-name', { textContent: u.username });
+
+      item.appendChild(check);
+      item.appendChild(dot);
+      item.appendChild(name);
+
+      item.addEventListener('click', () => {
+        if (selectedAddRoomUsers.has(u.username)) {
+          selectedAddRoomUsers.delete(u.username);
+          item.classList.remove('selected');
+        } else {
+          selectedAddRoomUsers.add(u.username);
+          item.classList.add('selected');
+        }
+        updateAddMembersCount();
+      });
+
+      els.addMembersUsersList.appendChild(item);
+    });
+  }
+
+  if (els.addMembersUserSearch) {
+    els.addMembersUserSearch.addEventListener('input', (e) => {
+      renderAddMembersCandidates(e.target.value);
+    });
+  }
+
+  async function openAddMembersModal() {
+    if (!state.currentChat || state.currentChat.type !== 'room') return;
+    els.roomActionsMenu.classList.add('hidden');
+    if (els.addMembersTitle) {
+      els.addMembersTitle.textContent = `Add Members to #${state.currentChat.name}`;
+    }
+    if (els.addMembersUserSearch) els.addMembersUserSearch.value = '';
+    selectedAddRoomUsers.clear();
+    updateAddMembersCount();
+    if (els.addMembersError) els.addMembersError.classList.add('hidden');
+    if (els.addMembersOverlay) els.addMembersOverlay.classList.remove('hidden');
+
+    if (els.addMembersUsersList) {
+      els.addMembersUsersList.innerHTML = '<div class="user-select-empty">Loading users...</div>';
+    }
+
+    try {
+      const [allUsers, currentMembers] = await Promise.all([
+        API.users.list(),
+        API.rooms.members(state.currentChat.id),
+      ]);
+      const existingSet = new Set(
+        (Array.isArray(currentMembers) ? currentMembers : []).map(m => m.username)
+      );
+      existingSet.add(currentUser.username);
+
+      addRoomCandidates = (Array.isArray(allUsers) ? allUsers : []).filter(
+        u => !existingSet.has(u.username)
+      );
+      renderAddMembersCandidates(els.addMembersUserSearch ? els.addMembersUserSearch.value : '');
+    } catch {
+      addRoomCandidates = [];
+      renderAddMembersCandidates('');
+    }
+  }
+
+  function closeAddMembersModal() {
+    if (els.addMembersOverlay) els.addMembersOverlay.classList.add('hidden');
+  }
+
+  if (els.addMembersMenuItem) {
+    els.addMembersMenuItem.addEventListener('click', openAddMembersModal);
+  }
+  if (els.addMembersPanelBtn) {
+    els.addMembersPanelBtn.addEventListener('click', openAddMembersModal);
+  }
+  if (els.closeAddMembersModal) {
+    els.closeAddMembersModal.addEventListener('click', closeAddMembersModal);
+  }
+  if (els.cancelAddMembersModal) {
+    els.cancelAddMembersModal.addEventListener('click', closeAddMembersModal);
+  }
+  if (els.addMembersOverlay) {
+    els.addMembersOverlay.addEventListener('click', (e) => {
+      if (e.target === els.addMembersOverlay) closeAddMembersModal();
+    });
+  }
+
+  if (els.confirmAddMembersBtn) {
+    els.confirmAddMembersBtn.addEventListener('click', async () => {
+      if (!state.currentChat || state.currentChat.type !== 'room') return;
+      const members = Array.from(selectedAddRoomUsers);
+      if (members.length === 0) {
+        if (els.addMembersError) {
+          els.addMembersError.textContent = 'Select at least one user to add.';
+          els.addMembersError.classList.remove('hidden');
+        }
+        return;
+      }
+      if (els.addMembersError) els.addMembersError.classList.add('hidden');
+      els.confirmAddMembersBtn.disabled = true;
+      els.confirmAddMembersBtn.querySelector('.btn-text').classList.add('hidden');
+      els.confirmAddMembersBtn.querySelector('.btn-spinner').classList.remove('hidden');
+
+      try {
+        await API.rooms.addMembers(state.currentChat.id, members);
+        closeAddMembersModal();
+        showToast(`Added ${members.join(', ')} to #${state.currentChat.name}`, 'success');
+        if (!els.membersPanel.classList.contains('hidden')) {
+          await loadMembers(state.currentChat.id);
+        }
+      } catch (e) {
+        if (els.addMembersError) {
+          els.addMembersError.textContent = e.message || 'Failed to add members.';
+          els.addMembersError.classList.remove('hidden');
+        }
+      } finally {
+        els.confirmAddMembersBtn.disabled = false;
+        els.confirmAddMembersBtn.querySelector('.btn-text').classList.remove('hidden');
+        els.confirmAddMembersBtn.querySelector('.btn-spinner').classList.add('hidden');
+      }
+    });
+  }
 
   /* Room Actions Dropdown */
   els.roomActionsBtn.addEventListener('click', (e) => {
@@ -1640,6 +1817,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       els.newRoomOverlay.classList.add('hidden');
+      if (els.addMembersOverlay) els.addMembersOverlay.classList.add('hidden');
       els.kickOverlay.classList.add('hidden');
       els.membersPanel.classList.add('hidden');
       els.emojiPicker.classList.add('hidden');

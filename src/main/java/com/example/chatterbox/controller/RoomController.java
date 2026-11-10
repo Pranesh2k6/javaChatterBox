@@ -109,6 +109,34 @@ public class RoomController {
     }
 
     // ----------------------------------------------------------------
+    // POST /api/rooms/{roomId}/members — add members to a room (owner/admin)
+    // ----------------------------------------------------------------
+
+    @PostMapping("/{roomId}/members")
+    public ResponseEntity<List<RoomMemberDto>> addRoomMembers(
+            @PathVariable Long roomId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+
+        Long userId = getSessionUserId(request);
+
+        List<String> members = new ArrayList<>();
+        Object rawMembers = body.get("members");
+        if (rawMembers instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null) {
+                    members.add(String.valueOf(item));
+                }
+            }
+        }
+
+        List<RoomMemberDto> updated =
+                chatService.addRoomMembers(userId, roomId, members);
+
+        return ResponseEntity.ok(updated);
+    }
+
+    // ----------------------------------------------------------------
     // GET /api/rooms/{roomId}/history?limit=50 — recent messages
     // ----------------------------------------------------------------
 

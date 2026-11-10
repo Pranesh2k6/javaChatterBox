@@ -49,6 +49,7 @@ const API = {
     create(roomName, description, members = [])     { return API.post('/api/rooms', { roomName, description, members }); },
     leave(roomId)                                   { return API.post(`/api/rooms/${roomId}/leave`, {}); },
     members(roomId)                                 { return API.get(`/api/rooms/${roomId}/members`); },
+    addMembers(roomId, members = [])                { return API.post(`/api/rooms/${roomId}/members`, { members }); },
     history(roomId, limit = 50)                     { return API.get(`/api/rooms/${roomId}/history?limit=${limit}`); },
     older(roomId, before, limit = 20)               { return API.get(`/api/rooms/${roomId}/history/older?before=${before}&limit=${limit}`); },
   },

@@ -231,6 +231,72 @@ public class ChatService {
         }
 
         /**
+         * Add one or more users as members to an existing room.
+         * Only the room OWNER (or ADMIN) is allowed to add members.
+         */
+        public List<RoomMemberDto> addRoomMembers(Long sessionUserId,
+                        Long roomId,
+                        List<String> memberUsernames) {
+
+                User requester = requireAuthenticatedUser(sessionUserId);
+
+                ChatRoom room = chatRoomRepository.findById(roomId)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Room not found"));
+
+                Optional<RoomMember> requesterMember = roomMemberRepository.findByRoomIdAndUserId(
+                                room.getRoomId(), requester.getUserId());
+
+                boolean isRoomOwner = room.getOwnerId() != null
+                                && room.getOwnerId().equals(requester.getUserId());
+                String requesterRole = requesterMember.map(RoomMember::getRole).orElse("");
+
+                if (!isRoomOwner
+                                && !"OWNER".equalsIgnoreCase(requesterRole)
+                                && !"ADMIN".equalsIgnoreCase(requesterRole)) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.FORBIDDEN,
+                                        "Only the room owner can add members");
+                }
+
+                if (memberUsernames == null || memberUsernames.isEmpty()) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.BAD_REQUEST,
+                                        "Select at least one user to add");
+                }
+
+                for (String rawUsername : memberUsernames) {
+                        if (rawUsername == null || rawUsername.isBlank()) {
+                                continue;
+                        }
+                        String uname = rawUsername.trim();
+                        Optional<User> targetOpt = userRepository.findByUsername(uname);
+                        if (targetOpt.isPresent()) {
+                                User target = targetOpt.get();
+                                if (!roomMemberRepository.exists(room.getRoomId(), target.getUserId())) {
+                                        RoomMember member = new RoomMember();
+                                        member.setRoomId(room.getRoomId());
+                                        member.setUserId(target.getUserId());
+                                        member.setRole("MEMBER");
+                                        roomMemberRepository.save(member);
+
+                                        chatServer.sendPrivateMessage(
+                                                        target.getUsername(),
+                                                        "[ROOM_ADDED] " + room.getRoomName());
+                                        chatServer.broadcastToRoom(
+                                                        room.getRoomName(),
+                                                        "[SYSTEM] " + target.getUsername() + " was added to "
+                                                                        + room.getRoomName() + " by " + requester.getUsername(),
+                                                        null);
+                                }
+                        }
+                }
+
+                return getRoomMembers(room.getRoomId());
+        }
+
+        /**
          * Return all members of a room, enriched with usernames.
          */
         public List<RoomMemberDto> getRoomMembers(Long roomId) {

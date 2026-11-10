@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chatterbox</title>
-  <link rel="stylesheet" href="/css/style.css?v=5" />
+  <link rel="stylesheet" href="/css/style.css?v=6" />
 </head>
 <body class="chat-page">
 
@@ -128,6 +128,12 @@
                 </svg>
               </button>
               <div class="dropdown-menu hidden" id="room-actions-menu">
+                <div class="dropdown-item" id="add-members-menu-item">
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                  </svg>
+                  Add Members
+                </div>
                 <div class="dropdown-item danger" id="kick-menu-item">
                   <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"/>
@@ -192,7 +198,8 @@
       </button>
     </div>
     <ul class="members-list" id="members-list" style="flex:1;"></ul>
-    <div id="members-footer" style="padding:12px 16px; border-top:1px solid var(--border-subtle); display:none;">
+    <div id="members-footer" style="padding:12px 16px; border-top:1px solid var(--border-subtle); display:none; flex-direction:column; gap:8px;">
+      <button class="btn-primary" id="add-members-panel-btn" type="button" style="width:100%; display:none;">+ Add Members</button>
       <button class="btn-danger" id="leave-room-panel-btn" type="button" style="width:100%;">Leave Room</button>
     </div>
   </div>
@@ -243,6 +250,40 @@
     </div>
   </div>
 
+  <!-- Add Members to Existing Room Modal -->
+  <div class="modal-overlay hidden" id="add-members-overlay">
+    <div class="modal" id="add-members-modal" role="dialog" aria-modal="true" aria-labelledby="add-members-title">
+      <div class="modal-header">
+        <h3 id="add-members-title">Add Members to Room</h3>
+        <button class="icon-btn" id="close-add-members-modal" aria-label="Close modal">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="field-label" for="add-members-user-search" style="margin-bottom:0;">Select Users to Add</label>
+            <span id="add-members-selected-count" style="font-size:12px; color:var(--accent-primary); font-weight:500;">0 selected</span>
+          </div>
+          <div class="field-wrap" style="margin-bottom:8px;">
+            <input class="field-input" type="text" id="add-members-user-search" placeholder="Filter users..." autocomplete="off" />
+          </div>
+          <div class="user-select-list" id="add-members-users-list"></div>
+        </div>
+        <div class="auth-error hidden" id="add-members-error"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancel-add-members-modal" type="button">Cancel</button>
+        <button class="btn-primary" id="confirm-add-members-btn" type="button">
+          <span class="btn-text">Add Selected</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Kick Member Modal -->
   <div class="modal-overlay hidden" id="kick-overlay">
     <div class="modal" id="kick-modal" role="dialog" aria-modal="true" aria-labelledby="kick-title">
@@ -270,8 +311,8 @@
     </div>
   </div>
 
-  <script src="/js/api.js?v=5"></script>
-  <script src="/js/websocket.js?v=5"></script>
-  <script src="/js/chat.js?v=5"></script>
+  <script src="/js/api.js?v=6"></script>
+  <script src="/js/websocket.js?v=6"></script>
+  <script src="/js/chat.js?v=6"></script>
 </body>
 </html>
